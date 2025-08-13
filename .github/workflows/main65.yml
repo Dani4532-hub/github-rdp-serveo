@@ -11,7 +11,7 @@ jobs:
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "password5351" -AsPlainText -Force)
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "Torn_4398?!" -AsPlainText -Force)
 
       - name: Start Serveo Tunnel (dynamic port)
         shell: bash

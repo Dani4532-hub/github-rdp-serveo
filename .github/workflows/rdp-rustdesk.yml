@@ -1,0 +1,61 @@
+name: Free Remote Desktop via RustDesk (no tunnel)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rustdesk:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Install RustDesk with winget
+        shell: powershell
+        run: |
+          winget install --id=RustDesk.RustDesk -e `
+            --accept-package-agreements --accept-source-agreements `
+            --silent --disable-interactivity
+
+      - name: Locate rustdesk.exe
+        id: findexe
+        shell: powershell
+        run: |
+          $path = "C:\Program Files\RustDesk\rustdesk.exe"
+          if (!(Test-Path $path)) {
+            $cand = Get-ChildItem "C:\Program Files" -Recurse -Filter rustdesk.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cand) { $path = $cand.FullName }
+          }
+          if (!(Test-Path $path)) { throw "Could not find rustdesk.exe" }
+          echo "exe=$path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Set unattended password & install service
+        shell: powershell
+        env:
+          RUSTDESK_PASS: Torn_4398! # <-- change this before running
+        run: |
+          $exe = '${{ steps.findexe.outputs.exe }}'
+          # Set permanent password (RustDesk encrypts it on first start)
+          & $exe --password $env:RUSTDESK_PASS | Out-String | Write-Host
+          # Install and start RustDesk service so it stays reachable
+          & $exe --install-service | Out-String | Write-Host
+          Start-Sleep -Seconds 3
+          Start-Service -Name RustDesk -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+
+      - name: Show RustDesk ID for connection
+        id: showid
+        shell: powershell
+        run: |
+          $exe = '${{ steps.findexe.outputs.exe }}'
+          # On Windows, capture output via Out-String
+          $id = (& $exe --get-id | Out-String).Trim()
+          if (-not $id) { throw "Failed to obtain RustDesk ID." }
+          Write-Host "===================="
+          Write-Host "RustDesk ID: $id"
+          Write-Host "Password: $env:RUSTDESK_PASS"
+          Write-Host "===================="
+          Write-Host "::notice title=RUSTDESK CONNECT::ID: $id  |  PASS: $env:RUSTDESK_PASS"
+
+      - name: Keep session alive (up to 6 hours)
+        shell: powershell
+        run: |
+          for ($i=0; $i -lt 720; $i++) { Start-Sleep -Seconds 30 }

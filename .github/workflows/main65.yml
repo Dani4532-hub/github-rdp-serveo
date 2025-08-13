@@ -1,0 +1,25 @@
+name: Free RDP with Serveo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Enable RDP on Windows
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString "password5351" -AsPlainText -Force)
+
+      - name: Start Serveo Tunnel (dynamic port)
+        shell: bash
+        run: |
+          ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net > tunnel.log 2>&1 &
+          sleep 10
+          cat tunnel.log
+
+      - name: Keep session alive
+        run: |
+          Start-Sleep -Seconds 3600

@@ -1,0 +1,71 @@
+name: Free RDP via Serveo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Enable RDP + set password
+        shell: powershell
+        run: |
+          $pass = ConvertTo-SecureString "torn_4398!" -AsPlainText -Force
+          # Ensure the built-in runner user has a known password
+          try { Set-LocalUser -Name "runneradmin" -Password $pass } catch {}
+          # Enable RDP and firewall rules
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          # Make sure the RDP service is up
+          Set-Service -Name TermService -StartupType Manual
+          Start-Service -Name TermService
+
+      - name: Start Serveo tunnel (auto-pick free port) and extract it
+        shell: powershell
+        run: |
+          $Log = Join-Path $env:RUNNER_TEMP "serveo.log"
+          if (Test-Path $Log) { Remove-Item $Log -Force }
+          $sshArgs = '-o','StrictHostKeyChecking=no','-R','0:localhost:3389','serveo.net'
+          $p = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -NoNewWindow -RedirectStandardOutput $Log -RedirectStandardError $Log -PassThru
+          
+          # Wait up to ~30s for Serveo to assign a port
+          $port = $null
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+            if (Test-Path $Log) {
+              $txt = Get-Content $Log -Raw
+              # Try several known Serveo formats
+              $patterns = @(
+                'Forwarding TCP port (\d+)',
+                'Forwarding TCP connections from .*?:(\d+)',
+                'Allocated port (\d+) for remote forward',
+                'Forwarding\s+from .*?:(\d+)'
+              )
+              foreach ($pat in $patterns) {
+                $m = [regex]::Match($txt, $pat)
+                if ($m.Success) { $port = $m.Groups[1].Value; break }
+              }
+              if ($port) { break }
+            }
+            Start-Sleep -Seconds 1
+          }
+
+          if (-not $port) {
+            Write-Host "==== Serveo log (for debug) ===="
+            if (Test-Path $Log) { Get-Content $Log | Write-Host } else { Write-Host "(no log produced)" }
+            throw "Failed to obtain Serveo port. Is serveo.net reachable right now?"
+          }
+
+          echo "RDP endpoint: serveo.net:$port" | Out-Host
+          echo "Username: runneradmin" | Out-Host
+          echo "Password: torn_4398!" | Out-Host
+
+          # Also print a single-line connection hint for copy/paste:
+          Write-Host "::notice title=RDP CONNECT::serveo.net:$port  |  user: runneradmin  |  pass: ChangeMe#1234"
+
+      - name: Keep session alive
+        shell: powershell
+        run: |
+          # Keep the job alive so the SSH tunnel stays open
+          for ($i=0; $i -lt 720; $i++) { Start-Sleep -Seconds 30 }
